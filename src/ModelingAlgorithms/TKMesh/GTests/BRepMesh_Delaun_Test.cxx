@@ -1,0 +1,450 @@
+// Copyright (c) 2025 OPEN CASCADE SAS
+//
+// This file is part of Open CASCADE Technology software library.
+//
+// This library is free software; you can redistribute it and/or modify it under
+// the terms of the GNU Lesser General Public License version 2.1 as published
+// by the Free Software Foundation, with special exception defined in the file
+// OCCT_LGPL_EXCEPTION.txt. Consult the file LICENSE_LGPL_21.txt included in OCCT
+// distribution for complete text of the license and disclaimer of any warranty.
+//
+// Alternatively, this file may be used under the terms of Open CASCADE
+// commercial license or contractual agreement.
+
+#include <BRep_Builder.hxx>
+#include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepMesh_IncrementalMesh.hxx>
+#include <BRepMesh_Delaun.hxx>
+#include <BRepMesh_CircleTool.hxx>
+#include <BRepMesh_DataStructureOfDelaun.hxx>
+#include <BRepMesh_Edge.hxx>
+#include <BRepMesh_Triangle.hxx>
+#include <BRepMesh_Vertex.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepPrimAPI_MakeCylinder.hxx>
+#include <Geom_Plane.hxx>
+#include <NCollection_IncAllocator.hxx>
+#include <NCollection_Shared.hxx>
+#include <NCollection_DynamicArray.hxx>
+#include <Poly_Triangulation.hxx>
+#include <Precision.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopLoc_Location.hxx>
+#include <TopoDS.hxx>
+#include <TopoDS_Face.hxx>
+#include <gp_Pln.hxx>
+#include <gp_Vec2d.hxx>
+#include <gp_XY.hxx>
+
+#include <cmath>
+#include <gtest/gtest.h>
+
+TEST(BRepMesh_DelaunTest, CircleSearchIgnoresDeletedVertices)
+{
+  for (const gp_XY& aDeletedPoint :
+       {gp_XY(-100.0, -100.0), gp_XY(-100.0, 100.0), gp_XY(100.0, -100.0), gp_XY(100.0, 100.0)})
+  {
+    const occ::handle<BRepMesh_DataStructureOfDelaun> aStructure =
+      new BRepMesh_DataStructureOfDelaun(new NCollection_IncAllocator);
+    const int aNodes[3] = {aStructure->AddNode(BRepMesh_Vertex(0.0, 0.0, BRepMesh_Free)),
+                           aStructure->AddNode(BRepMesh_Vertex(1.0, 0.0, BRepMesh_Free)),
+                           aStructure->AddNode(BRepMesh_Vertex(0.0, 1.0, BRepMesh_Free))};
+    int       aEdges[3];
+    bool      anOrientations[3];
+    for (int i = 0; i < 3; ++i)
+    {
+      const int anEdge =
+        aStructure->AddLink(BRepMesh_Edge(aNodes[i], aNodes[(i + 1) % 3], BRepMesh_Free));
+      aEdges[i]         = std::abs(anEdge);
+      anOrientations[i] = anEdge > 0;
+    }
+    const int aTriangle =
+      aStructure->AddElement(BRepMesh_Triangle(aEdges, anOrientations, BRepMesh_Free));
+    const int aDeletedNode = aStructure->AddNode(BRepMesh_Vertex(aDeletedPoint, 0, BRepMesh_Free));
+    aStructure->RemoveNode(aDeletedNode);
+    ASSERT_EQ(aStructure->GetNode(aDeletedNode).Movability(), BRepMesh_Deleted);
+
+    BRepMesh_Delaun                 aMesher(aStructure, 10, 10, true);
+    BRepMesh_CircleTool&            aCircles = const_cast<BRepMesh_CircleTool&>(aMesher.Circles());
+    const IMeshData::ListOfInteger& anInside = aCircles.Select(gp_XY(0.25, 0.25));
+    ASSERT_EQ(anInside.Size(), 1u);
+    EXPECT_EQ(anInside.First(), aTriangle);
+    for (const gp_XY& anOutside :
+         {gp_XY(-0.2, 0.5), gp_XY(1.2, 0.5), gp_XY(0.5, -0.2), gp_XY(0.5, 1.2)})
+    {
+      EXPECT_TRUE(aCircles.Select(anOutside).IsEmpty());
+    }
+  }
+}
+
+TEST(BRepMesh_DelaunTest, ContainsUsesEdgeToleranceForRefinementNodes)
+{
+  for (BRepMesh_DegreeOfFreedom aMovability : {BRepMesh_Free, BRepMesh_Frontier, BRepMesh_Fixed})
+  {
+    SCOPED_TRACE(static_cast<int>(aMovability));
+    const occ::handle<BRepMesh_DataStructureOfDelaun> aStructure =
+      new BRepMesh_DataStructureOfDelaun(new NCollection_IncAllocator);
+    const int aNodes[3] = {aStructure->AddNode(BRepMesh_Vertex(0.0, 0.0, BRepMesh_Free)),
+                           aStructure->AddNode(BRepMesh_Vertex(1.0, 0.0, BRepMesh_Free)),
+                           aStructure->AddNode(BRepMesh_Vertex(0.0, 1.0, BRepMesh_Free))};
+    int       aEdges[3];
+    bool      anOrientations[3];
+    for (int i = 0; i < 3; ++i)
+    {
+      const int anEdge =
+        aStructure->AddLink(BRepMesh_Edge(aNodes[i], aNodes[(i + 1) % 3], aMovability));
+      aEdges[i]         = std::abs(anEdge);
+      anOrientations[i] = anEdge > 0;
+    }
+    const int aTriangle =
+      aStructure->AddElement(BRepMesh_Triangle(aEdges, anOrientations, BRepMesh_Free));
+    BRepMesh_Delaun  aMesher(aStructure, 2, 2, true);
+    int              anEdgeOn     = 0;
+    constexpr double aSqTolerance = 1.e-20;
+    for (double anOffset : {-1.e-12, 0.0, 1.e-12})
+    {
+      SCOPED_TRACE(anOffset);
+      const BRepMesh_Vertex aPoint(0.5, anOffset, BRepMesh_Free);
+      EXPECT_EQ(aMesher.Contains(aTriangle, aPoint, aSqTolerance, anEdgeOn),
+                aMovability == BRepMesh_Free);
+      if (aMovability == BRepMesh_Free)
+      {
+        EXPECT_EQ(anEdgeOn, aEdges[0]);
+      }
+    }
+    EXPECT_FALSE(aMesher.Contains(aTriangle,
+                                  BRepMesh_Vertex(0.5, -1.e-6, BRepMesh_Free),
+                                  aSqTolerance,
+                                  anEdgeOn));
+    EXPECT_TRUE(aMesher.Contains(aTriangle,
+                                 BRepMesh_Vertex(0.25, 0.25, BRepMesh_Free),
+                                 aSqTolerance,
+                                 anEdgeOn));
+    EXPECT_EQ(anEdgeOn, 0);
+    const double aTolerance = std::sqrt(aSqTolerance);
+    EXPECT_TRUE(aMesher.Contains(aTriangle,
+                                 BRepMesh_Vertex(0.5, 2.0 * aTolerance, BRepMesh_Free),
+                                 aSqTolerance,
+                                 anEdgeOn));
+    EXPECT_EQ(anEdgeOn, 0);
+    EXPECT_FALSE(aMesher.Contains(aTriangle,
+                                  BRepMesh_Vertex(0.5, -2.0 * aTolerance, BRepMesh_Free),
+                                  aSqTolerance,
+                                  anEdgeOn));
+  }
+}
+
+// Test for bug 0032395: BRepMesh_Delaun::isVertexInsidePolygon
+// The method uses winding number algorithm to check if a point is inside a polygon.
+// For CCW polygons, the cumulative angle is -2*PI, but the original code only
+// checked for +2*PI. This test verifies that both orientations are handled correctly.
+
+TEST(BRepMesh_DelaunTest, Vec2dAngleSignConvention)
+{
+  // Verify gp_Vec2d::Angle sign convention used in isVertexInsidePolygon
+  // The angle from aPrev to aCur is computed as aCur.Angle(aPrev)
+
+  // Test CCW rotation: from (1,0) to (0,1) is 90 degrees CCW
+  gp_Vec2d aVecRight(1.0, 0.0);
+  gp_Vec2d aVecUp(0.0, 1.0);
+
+  // aCur.Angle(aPrev) where aCur=up, aPrev=right
+  // Going from right to up is CCW, angle should be negative in OCCT convention
+  const double anAngleCCW = aVecUp.Angle(aVecRight);
+  EXPECT_LT(anAngleCCW, 0.0) << "CCW rotation should give negative angle in OCCT convention";
+  EXPECT_NEAR(anAngleCCW, -M_PI_2, Precision::Angular());
+
+  // Test CW rotation: from (0,1) to (1,0) is 90 degrees CW
+  const double anAngleCW = aVecRight.Angle(aVecUp);
+  EXPECT_GT(anAngleCW, 0.0) << "CW rotation should give positive angle in OCCT convention";
+  EXPECT_NEAR(anAngleCW, M_PI_2, Precision::Angular());
+}
+
+TEST(BRepMesh_DelaunTest, WindingAngleCCWPolygon)
+{
+  // Simulate the winding angle calculation for a CCW square polygon
+  // with a point at the center
+  // Vertices: (1,0), (0,1), (-1,0), (0,-1) - CCW order
+  // Center point: (0,0)
+
+  gp_XY aCenter(0.0, 0.0);
+  gp_XY aVertices[5] = {
+    gp_XY(1.0, 0.0),
+    gp_XY(0.0, 1.0),
+    gp_XY(-1.0, 0.0),
+    gp_XY(0.0, -1.0),
+    gp_XY(1.0, 0.0) // Close the polygon
+  };
+
+  gp_Vec2d aPrevDir(aVertices[0] - aCenter);
+  double   aTotalAngle = 0.0;
+
+  for (int i = 1; i < 5; ++i)
+  {
+    gp_Vec2d aCurDir(aVertices[i] - aCenter);
+    aTotalAngle += aCurDir.Angle(aPrevDir);
+    aPrevDir = aCurDir;
+  }
+
+  // For CCW polygon with point inside, total angle should be -2*PI
+  EXPECT_NEAR(std::abs(aTotalAngle), 2.0 * M_PI, Precision::Angular())
+    << "Winding angle magnitude should be 2*PI for point inside polygon";
+
+  // The fix checks std::abs(std::abs(aTotalAng) - Angle2PI), so both +2PI and -2PI work
+  const double Angle2PI       = 2.0 * M_PI;
+  const bool   isInsideOldFix = std::abs(Angle2PI - aTotalAngle) <= Precision::Angular();
+  const bool   isInsideNewFix = std::abs(std::abs(aTotalAngle) - Angle2PI) <= Precision::Angular();
+
+  EXPECT_FALSE(isInsideOldFix) << "Old check fails for CCW polygon (angle is negative)";
+  EXPECT_TRUE(isInsideNewFix) << "New check handles both CCW and CW polygons";
+}
+
+TEST(BRepMesh_DelaunTest, WindingAngleCWPolygon)
+{
+  // Simulate the winding angle calculation for a CW square polygon
+  // Vertices in CW order: (1,0), (0,-1), (-1,0), (0,1)
+  // Center point: (0,0)
+
+  gp_XY aCenter(0.0, 0.0);
+  gp_XY aVertices[5] = {
+    gp_XY(1.0, 0.0),
+    gp_XY(0.0, -1.0),
+    gp_XY(-1.0, 0.0),
+    gp_XY(0.0, 1.0),
+    gp_XY(1.0, 0.0) // Close the polygon
+  };
+
+  gp_Vec2d aPrevDir(aVertices[0] - aCenter);
+  double   aTotalAngle = 0.0;
+
+  for (int i = 1; i < 5; ++i)
+  {
+    gp_Vec2d aCurDir(aVertices[i] - aCenter);
+    aTotalAngle += aCurDir.Angle(aPrevDir);
+    aPrevDir = aCurDir;
+  }
+
+  // For CW polygon with point inside, total angle should be +2*PI
+  EXPECT_NEAR(aTotalAngle, 2.0 * M_PI, Precision::Angular())
+    << "Winding angle should be +2*PI for CW polygon";
+
+  const double Angle2PI       = 2.0 * M_PI;
+  const bool   isInsideOldFix = std::abs(Angle2PI - aTotalAngle) <= Precision::Angular();
+  const bool   isInsideNewFix = std::abs(std::abs(aTotalAngle) - Angle2PI) <= Precision::Angular();
+
+  EXPECT_TRUE(isInsideOldFix) << "Old check works for CW polygon";
+  EXPECT_TRUE(isInsideNewFix) << "New check also works for CW polygon";
+}
+
+TEST(BRepMesh_DelaunTest, MeshPlanarFaceWithHole)
+{
+  // Create a planar face with a hole - this exercises the Delaunay triangulation
+  // code path that uses isVertexInsidePolygon during mesh refinement
+
+  // Outer wire: square 10x10 centered at origin
+  gp_Pnt aP1(-5.0, -5.0, 0.0);
+  gp_Pnt aP2(5.0, -5.0, 0.0);
+  gp_Pnt aP3(5.0, 5.0, 0.0);
+  gp_Pnt aP4(-5.0, 5.0, 0.0);
+
+  BRepBuilderAPI_MakeWire anOuterWireMaker;
+  anOuterWireMaker.Add(BRepBuilderAPI_MakeEdge(aP1, aP2));
+  anOuterWireMaker.Add(BRepBuilderAPI_MakeEdge(aP2, aP3));
+  anOuterWireMaker.Add(BRepBuilderAPI_MakeEdge(aP3, aP4));
+  anOuterWireMaker.Add(BRepBuilderAPI_MakeEdge(aP4, aP1));
+  ASSERT_TRUE(anOuterWireMaker.IsDone());
+
+  // Inner wire (hole): smaller square 2x2 centered at origin
+  gp_Pnt aH1(-1.0, -1.0, 0.0);
+  gp_Pnt aH2(1.0, -1.0, 0.0);
+  gp_Pnt aH3(1.0, 1.0, 0.0);
+  gp_Pnt aH4(-1.0, 1.0, 0.0);
+
+  BRepBuilderAPI_MakeWire anInnerWireMaker;
+  anInnerWireMaker.Add(BRepBuilderAPI_MakeEdge(aH1, aH2));
+  anInnerWireMaker.Add(BRepBuilderAPI_MakeEdge(aH2, aH3));
+  anInnerWireMaker.Add(BRepBuilderAPI_MakeEdge(aH3, aH4));
+  anInnerWireMaker.Add(BRepBuilderAPI_MakeEdge(aH4, aH1));
+  ASSERT_TRUE(anInnerWireMaker.IsDone());
+
+  // Create face with hole
+  occ::handle<Geom_Plane> aPlane = new Geom_Plane(gp_Pln(gp::Origin(), gp::DZ()));
+  BRepBuilderAPI_MakeFace aFaceMaker(aPlane, anOuterWireMaker.Wire());
+  aFaceMaker.Add(anInnerWireMaker.Wire());
+  ASSERT_TRUE(aFaceMaker.IsDone());
+
+  TopoDS_Face aFace = aFaceMaker.Face();
+
+  // Mesh the face
+  BRepMesh_IncrementalMesh aMesher(aFace, 0.1);
+  EXPECT_TRUE(aMesher.IsDone()) << "Meshing should succeed";
+
+  // Verify triangulation exists
+  TopLoc_Location                       aLoc;
+  const occ::handle<Poly_Triangulation> aTri = BRep_Tool::Triangulation(aFace, aLoc);
+  ASSERT_FALSE(aTri.IsNull()) << "Triangulation should be created";
+  EXPECT_GT(aTri->NbTriangles(), 0) << "Should have triangles";
+  EXPECT_GT(aTri->NbNodes(), 0) << "Should have nodes";
+}
+
+TEST(BRepMesh_DelaunTest, MeshBoxAllFaces)
+{
+  // Create and mesh a box - tests triangulation on faces with different orientations
+  TopoDS_Shape aBox = BRepPrimAPI_MakeBox(10.0, 10.0, 10.0).Shape();
+
+  BRepMesh_IncrementalMesh aMesher(aBox, 0.5);
+  EXPECT_TRUE(aMesher.IsDone()) << "Meshing should succeed";
+
+  // Verify all faces are triangulated
+  int aFaceCount = 0;
+  for (TopExp_Explorer anExp(aBox, TopAbs_FACE); anExp.More(); anExp.Next())
+  {
+    const TopoDS_Face&                    aFace = TopoDS::Face(anExp.Current());
+    TopLoc_Location                       aLoc;
+    const occ::handle<Poly_Triangulation> aTri = BRep_Tool::Triangulation(aFace, aLoc);
+
+    EXPECT_FALSE(aTri.IsNull()) << "Face " << aFaceCount << " should have triangulation";
+    if (!aTri.IsNull())
+    {
+      EXPECT_GT(aTri->NbTriangles(), 0) << "Face " << aFaceCount << " should have triangles";
+    }
+    ++aFaceCount;
+  }
+
+  EXPECT_EQ(aFaceCount, 6) << "Box should have 6 faces";
+}
+
+TEST(BRepMesh_DelaunTest, MeshCylinderCurvedFaces)
+{
+  // Create and mesh a cylinder - curved faces may have different polygon orientations
+  TopoDS_Shape aCylinder = BRepPrimAPI_MakeCylinder(5.0, 10.0).Shape();
+
+  BRepMesh_IncrementalMesh aMesher(aCylinder, 0.5);
+  EXPECT_TRUE(aMesher.IsDone()) << "Meshing should succeed";
+
+  // Verify faces are triangulated
+  int aTotalTriangles = 0;
+  for (TopExp_Explorer anExp(aCylinder, TopAbs_FACE); anExp.More(); anExp.Next())
+  {
+    const TopoDS_Face&                    aFace = TopoDS::Face(anExp.Current());
+    TopLoc_Location                       aLoc;
+    const occ::handle<Poly_Triangulation> aTri = BRep_Tool::Triangulation(aFace, aLoc);
+
+    EXPECT_FALSE(aTri.IsNull()) << "Face should have triangulation";
+    if (!aTri.IsNull())
+    {
+      aTotalTriangles += aTri->NbTriangles();
+    }
+  }
+
+  EXPECT_GT(aTotalTriangles, 0) << "Cylinder should have triangles";
+}
+
+TEST(BRepMesh_DelaunTest, InteriorPointNearLongFrontierIsInserted)
+{
+  for (const double aScale : {.1, 1., 10.})
+  {
+    const occ::handle<BRepMesh_DataStructureOfDelaun> aStructure =
+      new BRepMesh_DataStructureOfDelaun(new NCollection_IncAllocator);
+    aStructure->Data()->SetTolerance(Precision::PConfusion());
+    const int aNodes[3] = {
+      aStructure->AddNode(BRepMesh_Vertex(0., 0., BRepMesh_Frontier)),
+      aStructure->AddNode(BRepMesh_Vertex(aScale, 0., BRepMesh_Frontier)),
+      aStructure->AddNode(BRepMesh_Vertex(.5 * aScale, .25 * aScale, BRepMesh_Frontier))};
+    int  aEdges[3];
+    bool anOrientations[3];
+    for (int anIndex = 0; anIndex < 3; ++anIndex)
+    {
+      const int anEdge = aStructure->AddLink(
+        BRepMesh_Edge(aNodes[anIndex], aNodes[(anIndex + 1) % 3], BRepMesh_Frontier));
+      aEdges[anIndex]         = std::abs(anEdge);
+      anOrientations[anIndex] = anEdge > 0;
+    }
+    const int aTriangle =
+      aStructure->AddElement(BRepMesh_Triangle(aEdges, anOrientations, BRepMesh_Free));
+    BRepMesh_Delaun aMesher(aStructure, 2, 2, true);
+    // The centroid height is one third of the triangle height aScale / 4.
+    const BRepMesh_Vertex aPoint(.5 * aScale, aScale / 12., BRepMesh_Free);
+    double                aTolU, aTolV;
+    aStructure->Data()->GetTolerance(aTolU, aTolV);
+    const double aSqTolerance = aTolU * aTolU + aTolV * aTolV;
+    int          anEdgeOn     = 0;
+    ASSERT_TRUE(aMesher.Contains(aTriangle, aPoint, aSqTolerance, anEdgeOn));
+    EXPECT_EQ(anEdgeOn, 0) << "scale=" << aScale;
+    NCollection_Shared<NCollection_DynamicArray<int>> aVertices;
+    const int                                         aPointId = aStructure->AddNode(aPoint);
+    aVertices.Append(aPointId);
+    aMesher.AddVertices(aVertices);
+    EXPECT_EQ(aStructure->ElementsOfDomain().Size(), 3u) << "scale=" << aScale;
+    int anIncidentTriangles = 0;
+    for (int anIndex : aStructure->ElementsOfDomain())
+    {
+      int aTriangleNodes[3];
+      aStructure->ElementNodes(aStructure->GetElement(anIndex), aTriangleNodes);
+      for (int aNode : aTriangleNodes)
+        if (aNode == aPointId)
+          ++anIncidentTriangles;
+    }
+    EXPECT_EQ(anIncidentTriangles, 3) << "scale=" << aScale;
+  }
+}
+
+TEST(BRepMesh_DelaunTest, SharedEdgeAndBoundaryInsertionKeepConstraints)
+{
+  for (const int aCase : {0, 1, 2, 3})
+  {
+    const occ::handle<BRepMesh_DataStructureOfDelaun> aStructure =
+      new BRepMesh_DataStructureOfDelaun(new NCollection_IncAllocator);
+    const int aNodes[4] = {aStructure->AddNode(BRepMesh_Vertex(0., 0., BRepMesh_Frontier)),
+                           aStructure->AddNode(BRepMesh_Vertex(1., 0., BRepMesh_Frontier)),
+                           aStructure->AddNode(BRepMesh_Vertex(1., 1., BRepMesh_Frontier)),
+                           aStructure->AddNode(BRepMesh_Vertex(0., 1., BRepMesh_Frontier))};
+    int       anOuter[4];
+    for (int anIndex = 0; anIndex < 4; ++anIndex)
+    {
+      anOuter[anIndex] = aStructure->AddLink(
+        BRepMesh_Edge(aNodes[anIndex], aNodes[(anIndex + 1) % 4], BRepMesh_Frontier));
+    }
+    const int aDiagonal = aStructure->AddLink(
+      BRepMesh_Edge(aNodes[0], aNodes[2], aCase == 3 ? BRepMesh_Fixed : BRepMesh_Free));
+    const int  aTriangle1Edges[3]        = {anOuter[0], anOuter[1], aDiagonal};
+    const bool aTriangle1Orientations[3] = {true, true, false};
+    const int  aTriangle2Edges[3]        = {aDiagonal, anOuter[2], anOuter[3]};
+    const bool aTriangle2Orientations[3] = {true, true, true};
+    aStructure->AddElement(
+      BRepMesh_Triangle(aTriangle1Edges, aTriangle1Orientations, BRepMesh_Free));
+    aStructure->AddElement(
+      BRepMesh_Triangle(aTriangle2Edges, aTriangle2Orientations, BRepMesh_Free));
+    BRepMesh_Delaun aMesher(aStructure, 2, 2, true);
+    const gp_XY     aParameter(.5, aCase == 1 ? 0. : (aCase == 2 ? -.5 : .5));
+    const int       aPoint = aStructure->AddNode(BRepMesh_Vertex(aParameter, 0, BRepMesh_Free));
+    NCollection_Shared<NCollection_DynamicArray<int>> aVertices;
+    aVertices.Append(aPoint);
+    aMesher.AddVertices(aVertices);
+    EXPECT_EQ(aStructure->ElementsOfDomain().Size(), aCase == 0 ? 4u : 2u) << "case=" << aCase;
+    int anIncident = 0;
+    for (int anIndex : aStructure->ElementsOfDomain())
+    {
+      int aTriangleNodes[3];
+      aStructure->ElementNodes(aStructure->GetElement(anIndex), aTriangleNodes);
+      for (int aNode : aTriangleNodes)
+      {
+        if (aNode == aPoint)
+        {
+          ++anIncident;
+        }
+      }
+    }
+    EXPECT_EQ(anIncident, aCase == 0 ? 4 : 0) << "case=" << aCase;
+    for (const int anEdge : anOuter)
+    {
+      EXPECT_EQ(aStructure->GetLink(anEdge).Movability(), BRepMesh_Frontier);
+    }
+    if (aCase == 3)
+    {
+      EXPECT_EQ(aStructure->GetLink(aDiagonal).Movability(), BRepMesh_Fixed);
+    }
+  }
+}

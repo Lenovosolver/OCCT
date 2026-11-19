@@ -1,0 +1,11 @@
+puts "TODO OCC24255 ALL: Error: Offset is not done."
+puts "TODO OCC24255 ALL: Error: The command cannot be built"
+puts "TODO OCC24255 ALL: Error : The offset cannot be built."
+
+restore [locate_data_file offset_wire_071.brep] s
+
+set length 121794
+set nbsh_v 205
+set nbsh_e 205
+set nbsh_w 1
+

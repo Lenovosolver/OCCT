@@ -1,0 +1,27 @@
+puts "========"
+puts "OCC25206"
+puts "========"
+puts ""
+##########################################
+# Fillet creates edge with C0 continuity
+##########################################
+
+restore [locate_data_file bug25206_lampe-1-draw-Fusion.brep] Fusion
+
+explode Fusion E
+set edges [explode Fusion E]
+blend Fillet Fusion 25 Fusion_4 25 Fusion_5 25 Fusion_6 25 Fusion_7 25 Fusion_8 25 Fusion_9 25 Fusion_10 25 Fusion_11 25 Fusion_12
+checkshape Fillet
+
+foreach face [explode Fillet F] {
+  mksurface surf $face
+  if {[string match "* C0 continuity.*" [getsurfcontinuity surf]]} {
+    puts "ERROR: OCC25206 is reproduced. C0 surface continuity has been detected."
+  }
+}
+foreach edge [explode Fillet E] {
+  mkcurve curve $edge
+  if {[string match "* C0 continuity.*" [getcurvcontinuity curve]]} {
+    puts "ERROR: OCC25206 is reproduced. C0 curve continuity has been detected."
+  }
+}

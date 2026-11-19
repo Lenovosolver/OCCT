@@ -1,0 +1,43 @@
+puts "========"
+puts "OCC27856"
+puts "========"
+puts ""
+#################################################
+# Regression vs 6.7.1: General Fuse operation fails to fuse the solids
+#################################################
+
+# Before the fix, EMPTY result (no points, no curves)
+# was returned in every considered case.
+
+restore [locate_data_file bug27856_int_solids.brep] b
+
+explode b so
+
+foreach i {1 2 3 4 5 6 7 8} {
+  explode b_$i f
+}
+
+foreach {aFirst aSecond aExpectedTol aRelativeTol} {
+  b_1_2 b_2_2 3.2189908018189848e-9 1.0e-3
+  b_1_4 b_2_4 1.8264706324167324e-9 1.0e-2
+  b_3_2 b_4_2 7.7976213145920614e-9 1.0e-3
+  b_3_4 b_4_4 8.267744217025954e-9 1.0e-3
+  b_5_2 b_6_2 0.00023908275610239443 1.0e-2
+  b_5_4 b_6_4 0.00023908229485464211 1.0e-3
+  b_7_2 b_8_2 0.00024742189277229045 1.0e-3
+  b_7_4 b_8_4 0.00024741956880886153 1.0e-2
+} {
+  set aLog [bopcurves $aFirst $aSecond -2d]
+  if {![regexp {Tolerance Reached=+([-0-9.+eE]+)\n+([-0-9.+eE]+)} $aLog full Toler NbCurv]} {
+    puts "Error: Cannot read intersection result for $aFirst and $aSecond"
+    continue
+  }
+  if {$NbCurv != 1} {
+    puts "Error: Number of curves is bad!"
+    continue
+  }
+  checkreal "TolReached $aFirst $aSecond" $Toler $aExpectedTol 0.0 $aRelativeTol
+  mksurface s1 $aFirst
+  mksurface s2 $aSecond
+  CheckIntersectionResult s1 s2 {c_1} 101 1.0e-7 1.0e-7
+}

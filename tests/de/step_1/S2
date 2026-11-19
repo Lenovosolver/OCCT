@@ -1,0 +1,18 @@
+# !!!! This file is generated automatically, do not edit manually! See end script
+set filename t4mdb.stp
+
+set ref_data {
+DATA        : Faulties = 0  ( 0 )  Warnings = 0  ( 0 )  Summary  = 0  ( 0 )
+TPSTAT      : Faulties = 0  ( 0 )  Warnings = 3  ( 3 )  Summary  = 3  ( 3 )
+CHECKSHAPE  : Wires    = 0  ( 0 )  Faces    = 0  ( 0 )  Shells   = 0  ( 0 )   Solids   = 0 ( 0 )
+NBSHAPES    : Solid    = 0  ( 0 )  Shell    = 13  ( 13 )  Face     = 13  ( 13 ) 
+STATSHAPE   : Solid    = 0  ( 0 )  Shell    = 13  ( 13 )  Face     = 13  ( 13 )   FreeWire = 0  ( 0 ) 
+TOLERANCE   : MaxTol   = 0.002350790757  ( 0.002350790899 )  AvgTol   =  0.000254004885  (  0.0003525715542 )
+LABELS      : N0Labels = 1  ( 1 )  N1Labels = 96  ( 96 )  N2Labels = 0  ( 0 )   TotalLabels = 97  ( 97 )   NameLabels = 1  ( 1 )   ColorLabels = 12  ( 12 )   LayerLabels = 84  ( 84 )
+PROPS       : Centroid = 0  ( 0 )  Volume   = 0  ( 0 )  Area     = 0  ( 0 )
+NCOLORS     : NColors  = 9  ( 9 )
+COLORS      : Colors   = CYAN DODGERBLUE2 GRAY67 GREEN MAGENTA MAGENTA3 RED WHITE YELLOW  ( CYAN DODGERBLUE2 GRAY67 GREEN MAGENTA MAGENTA3 RED WHITE YELLOW )
+NLAYERS     : NLayers  = 12  ( 12 )
+LAYERS      : Layers   = 0 10 20 40 41 42 43 44 45 47 48 49  ( 0 10 20 40 41 42 43 44 45 47 48 49 )
+
+}

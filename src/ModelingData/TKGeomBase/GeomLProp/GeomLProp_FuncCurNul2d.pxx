@@ -1,0 +1,89 @@
+// Copyright (c) 1994-1999 Matra Datavision
+// Copyright (c) 1999-2014 OPEN CASCADE SAS
+//
+// This file is part of Open CASCADE Technology software library.
+//
+// This library is free software; you can redistribute it and/or modify it under
+// the terms of the GNU Lesser General Public License version 2.1 as published
+// by the Free Software Foundation, with special exception defined in the file
+// OCCT_LGPL_EXCEPTION.txt. Consult the file LICENSE_LGPL_21.txt included in OCCT
+// distribution for complete text of the license and disclaimer of any warranty.
+//
+// Alternatively, this file may be used under the terms of Open CASCADE
+// commercial license or contractual agreement.
+
+#ifndef _GeomLProp_FuncCurNul2d_HeaderFile
+#define _GeomLProp_FuncCurNul2d_HeaderFile
+
+#include <Geom2d_Curve.hxx>
+#include <Geom2dAdaptor_Curve.hxx>
+#include <gp.hxx>
+#include <gp_Pnt2d.hxx>
+#include <gp_Vec2d.hxx>
+#include <math_FunctionWithDerivative.hxx>
+
+//! Function used to find the inflection points of a 2D curve.
+//! Computes the tangent angle derivative in the normalized parameter interval.
+//! The roots of F correspond to inflection points.
+class GeomLProp_FuncCurNul2d : public math_FunctionWithDerivative
+{
+public:
+  //! Initializes the function with the curve to analyze.
+  //! @param[in] theCurve the 2D curve
+  //! @param[in] theUMin first parameter of the smooth interval
+  //! @param[in] theUMax last parameter of the smooth interval
+  GeomLProp_FuncCurNul2d(const occ::handle<Geom2d_Curve>& theCurve, double theUMin, double theUMax)
+      : myCurve(theCurve, theUMin, theUMax),
+        myParameterSpan(theUMax - theUMin)
+  {
+  }
+
+  //! Computes the function value at parameter theU.
+  //! @param theU [in] the curve parameter
+  //! @param theF [out] the function value
+  //! @return true on success
+  bool Value(const double theU, double& theF) override
+  {
+    double aD;
+    return Values(theU, theF, aD);
+  }
+
+  //! Computes the derivative of the function at parameter theU.
+  //! @param theU [in] the curve parameter
+  //! @param theD [out] the derivative value
+  //! @return true on success
+  bool Derivative(const double theU, double& theD) override
+  {
+    double aF;
+    return Values(theU, aF, theD);
+  }
+
+  //! Computes both function value and its derivative at parameter theU.
+  //! The function remains continuous when the second derivative is zero.
+  //! @param theU [in] the curve parameter
+  //! @param theF [out] the function value
+  //! @param theD [out] the derivative value
+  //! @return false if the tangent is degenerate
+  bool Values(const double theU, double& theF, double& theD) override
+  {
+    const auto [aPnt, aDeriv1, aDeriv2, aDeriv3] = myCurve.EvalD3(theU);
+    const double aSpeed                          = aDeriv1.Magnitude();
+    if (aSpeed <= gp::Resolution())
+    {
+      return false;
+    }
+    const gp_Vec2d aTangent = aDeriv1 / aSpeed;
+    const gp_Vec2d aD2      = aDeriv2 / aSpeed;
+    const gp_Vec2d aD3      = aDeriv3 / aSpeed;
+    const double   aTurn    = aTangent.Crossed(aD2);
+    theF                    = myParameterSpan * aTurn;
+    theD = myParameterSpan * (aTangent.Crossed(aD3) - 2.0 * aTurn * aTangent.Dot(aD2));
+    return true;
+  }
+
+private:
+  Geom2dAdaptor_Curve myCurve;         //!< Adaptor restricted to the smooth interval.
+  double              myParameterSpan; //!< Length used to normalize the curve parameter.
+};
+
+#endif // _GeomLProp_FuncCurNul2d_HeaderFile

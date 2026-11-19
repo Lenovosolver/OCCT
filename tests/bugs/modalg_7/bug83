@@ -1,0 +1,38 @@
+puts "====="
+puts "OCC83"
+puts "====="
+puts ""
+#####################################################################
+# BUC60912. Section of simple BSpline surfaces is performed too slow.
+#####################################################################
+
+restore [locate_data_file BUC60912_sec_slow.brep] c
+
+explode c
+renamevar c_1 sh
+renamevar c_2 pr
+
+plane f 0 0 0 1 0 0
+mkface f f -11 11 -11 11
+
+puts "Info: perform section with plane"
+chrono h1 reset; chrono h1 start
+bsection r1 f pr
+chrono h1 stop counter "CPU section r1"
+
+puts "Info: perform section with planar BSpline surface"
+chrono h2 reset; chrono h2 start
+bsection r2 sh pr
+chrono h2 stop counter "CPU section r2"
+
+# CPU time excludes scheduling delays; rounding removes counter noise.
+foreach {index timer result} {1 h1 r1 2 h2 r2} {
+  dchrono $timer show
+  set cpuTime [format %.6f [expr {[dchrono $timer -userCPU] + [dchrono $timer -sysCPU]}]]
+  if {$cpuTime > 0.1} {
+    puts "Error: Section of simple BSpline surfaces_${index} is performed too slow"
+  }
+  checkshape $result
+  checknbshapes $result -vertex 4 -edge 4
+  checkprops $result -l 42.879
+}

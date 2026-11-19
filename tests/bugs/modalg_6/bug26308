@@ -1,0 +1,24 @@
+puts "========"
+puts "OCC26308"
+puts "========"
+puts ""
+###################################################
+# Segmentation fault in BSplCLib::LocateParameter
+###################################################
+
+#Exception is thrown when computing a value of B-spline
+#surfaces in point, which is outside of its domain.
+
+pload XDE
+
+ReadStep D_First [locate_data_file OCC26308-Face.stp]
+XGetOneShape rr D_First
+explode rr f
+mksurface ss rr_1
+
+svalue ss -1.427997381773311e+018 4.512451574816904e+016 xx yy zz
+
+# Degree-six extrapolation requires a numeric comparison with rounding allowance.
+checkreal "extrapolated X" [dval xx] -5.4265912543762849e207 0 1e-12
+checkreal "extrapolated Y" [dval yy]  2.9080397442399383e209 0 1e-12
+checkreal "extrapolated Z" [dval zz] -3.1731154470563740e207 0 1e-12

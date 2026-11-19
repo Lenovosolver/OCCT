@@ -1,0 +1,98 @@
+// Copyright (c) 1999-2014 OPEN CASCADE SAS
+//
+// This file is part of Open CASCADE Technology software library.
+//
+// This library is free software; you can redistribute it and/or modify it under
+// the terms of the GNU Lesser General Public License version 2.1 as published
+// by the Free Software Foundation, with special exception defined in the file
+// OCCT_LGPL_EXCEPTION.txt. Consult the file LICENSE_LGPL_21.txt included in OCCT
+// distribution for complete text of the license and disclaimer of any warranty.
+//
+// Alternatively, this file may be used under the terms of Open CASCADE
+// commercial license or contractual agreement.
+
+#ifndef AdvApp2Var_Data_HeaderFile
+#define AdvApp2Var_Data_HeaderFile
+
+//
+struct mlgdrtl_1_
+{
+  double values[1891];
+
+  constexpr const double* Rootab() const { return values; }
+
+  constexpr const double* Hiltab() const { return values + 930; }
+
+  constexpr const double* Hi0tab() const { return values + 1860; }
+};
+
+//
+struct mmjcobi_1_
+{
+  double values[3968];
+
+  constexpr const double* Plgcan() const { return values; }
+};
+
+//
+struct mmcmcnp_1_
+{
+  double values[3721];
+
+  constexpr const double* Cnp() const { return values; }
+};
+
+//
+struct mmapgss_1_
+{
+  double values[5069];
+
+  constexpr const double* Gslxjs() const { return values; }
+
+  constexpr const double* Gsl0js() const { return values + 5017; }
+};
+
+//
+struct mmapgs0_1_
+{
+  double values[4810];
+
+  constexpr const double* Gslxj0() const { return values; }
+
+  constexpr const double* Gsl0j0() const { return values + 4761; }
+};
+
+//
+struct mmapgs1_1_
+{
+  double values[4551];
+
+  constexpr const double* Gslxj1() const { return values; }
+
+  constexpr const double* Gsl0j1() const { return values + 4505; }
+};
+
+//
+struct mmapgs2_1_
+{
+  double values[4292];
+
+  constexpr const double* Gslxj2() const { return values; }
+
+  constexpr const double* Gsl0j2() const { return values + 4249; }
+};
+
+////
+class AdvApp2Var_Data
+{
+public:
+  static const mlgdrtl_1_& Getmlgdrtl();
+  static const mmjcobi_1_& Getmmjcobi();
+  static const mmcmcnp_1_& Getmmcmcnp();
+  static const mmapgss_1_& Getmmapgss();
+  static const mmapgs0_1_& Getmmapgs0();
+  static const mmapgs1_1_& Getmmapgs1();
+  static const mmapgs2_1_& Getmmapgs2();
+};
+
+#endif

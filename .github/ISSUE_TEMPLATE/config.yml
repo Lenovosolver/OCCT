@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: OCCT forum archive
+    url: https://occt3d.com/dev/
+    about: Search historical discussions in the read-only forum archive. Use GitHub Discussions for new questions.
+  - name: GitHub discussions
+    url: https://github.com/Open-Cascade-SAS/OCCT/discussions
+    about: Ask questions about using and developing OCCT.
+  - name: Contact OCCT3D
+    url: https://occt3d.com/contact
+    about: Request CLA documents, contribution information, or commercial support.

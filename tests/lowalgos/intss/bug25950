@@ -1,0 +1,103 @@
+puts "========="
+puts "0025950: Bad performance of intersection algorithm."
+puts "========="
+puts ""
+
+cpulimit 200
+
+foreach a [directory res*] {unset $a}
+
+restore [locate_data_file bug25950_b1.brep] b1
+restore [locate_data_file bug25950_b2.brep] b2
+
+mksurface s1 b1
+mksurface s2 b2
+
+don s1 s2
+clpoles s1
+clpoles s2
+clknots
+
+dchrono z reset
+dchrono z start
+
+intersect res s1 s2 
+
+dchrono z stop counter Bug25950IntSS
+dchrono z show 
+
+smallview +Y+Z
+fit
+checkview -screenshot -2d -path ${imagedir}/${test_image}_2d.png
+
+set che [whatis res]
+set ind [string first "3d curve" $che]
+if {${ind} >= 0} {
+  #Only variable "res" exists
+  renamevar res res_1
+}
+
+bclearobjects
+bcleartools
+compound result
+
+set CurvesList {}
+
+set ic 1
+set AllowRepeat 1
+while { $AllowRepeat != 0 } {
+  set che [whatis res_$ic]
+  set ind [string first "3d curve" $che]
+  if {${ind} < 0} {
+    set AllowRepeat 0
+  } else {
+    lappend CurvesList res_$ic
+    mkedge ee res_$ic
+    baddobjects ee
+    add ee result
+    incr ic
+  }
+}
+
+set ic [expr $ic - 1]
+
+if {$ic == 0} {
+  puts "Error: No intersection curves"
+} else {
+  CheckIntersectionResult s1 s2 $CurvesList 100 7.0e-5 2.0e-4
+  CheckOverlapIntCurves $CurvesList
+  if {$ic > 1} {
+    bfillds
+    bbuild result
+  }
+
+  # The sphere and ellipsoid meet along x=0, y*y+z*z=9.
+  set aMaxLocusError 0.0
+  foreach aCurve $CurvesList {
+    bounds $aCurve aFirst aLast
+    for {set i 0} {$i <= 100} {incr i} {
+      cvalue $aCurve [expr {([dval aFirst]*(100-$i)+[dval aLast]*$i)/100.0}] x y z
+      set aMaxLocusError [expr {max($aMaxLocusError, abs([dval x]), abs(hypot([dval y],[dval z])-3.0))}]
+    }
+  }
+  checkreal "Intersection locus deviation" $aMaxLocusError 0.0 2.0e-4 0.0
+
+  set aMaxCoverageError 0.0
+  for {set i 0} {$i < 100} {incr i} {
+    set anAngle [expr {2.0*acos(-1.0)*$i/100.0}]
+    vertex aSample 0.0 [expr {3.0*cos($anAngle)}] [expr {3.0*sin($anAngle)}]
+    unset -nocomplain aDistance_val
+    distmini aDistance aSample result
+    set aMaxCoverageError [expr {max($aMaxCoverageError,[dval aDistance_val])}]
+  }
+  puts "Maximum circle coverage distance: $aMaxCoverageError"
+  if {$aMaxCoverageError > 2.0e-4} {
+    puts "Error: Intersection does not cover the circle"
+  }
+
+  checksection result -r 0
+  checkmaxtol result -min_tol 2.0e-7
+  checkprops result -l [expr {6.0*acos(-1.0)}]
+}
+
+checkview -display result -2d -path ${imagedir}/${test_image}_3d.png

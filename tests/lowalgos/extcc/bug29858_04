@@ -1,0 +1,30 @@
+puts "========"
+puts "OCC29858"
+puts "========"
+puts ""
+#################################################
+# Regression in GeomAPI_ExtremaCurveCurve
+#################################################
+
+# Read input
+restore [locate_data_file bug29858_04_e1.brep] e1
+restore [locate_data_file bug29858_04_e2.brep] e2
+
+# Extract geometry from topology
+mkcurve c1 e1
+mkcurve c2 e2
+
+# Run extrema
+set info [extrema c1 c2]
+
+# Both extrema are intersections. DRAW reports a point instead of a segment
+# when the computed separation is below 1e-16; both forms represent distance zero.
+set extrema [regexp -all -inline {ext_[0-9]+|Extrema [0-9]+ is point} $info]
+if {[llength $extrema] != 2} {
+  puts "Error: Invalid extrema number in extrema output"
+}
+foreach extremum $extrema {
+  if {[string match "ext_*" $extremum]} {
+    checkreal "extrema distance" [lindex [length $extremum] end] 0.0 1.e-10 0.0
+  }
+}

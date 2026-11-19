@@ -1,0 +1,23 @@
+puts "============"
+puts "OCC27998"
+puts "============"
+puts ""
+######################################################
+# Self-intersection is not detected
+######################################################
+
+restore [locate_data_file bug27998_shape_self-int.brep] a
+
+set info1 [bopcheck a 9]
+
+if { [regexp -all {F/F:} $info1] != 2 ||
+     ![regexp {F/F: x18 x18} $info1] || ![regexp {F/F: x44 x44} $info1] } {
+    puts "Error : bopcheck a works wrong"
+} else {
+    puts "OK: bopcheck a works properly"
+    # A closed seam must not create section curves.
+    set curves [bopcurves x44 x44 -2d]
+    if {![regexp {(^|\n)2 curve\(s\) found\.} $curves]} {
+        puts "Error : redundant self-intersection curves"
+    }
+}

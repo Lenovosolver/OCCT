@@ -1,0 +1,7 @@
+# Test source files for TKFeat
+set(OCCT_TKFeat_GTests_FILES_LOCATION "${CMAKE_CURRENT_LIST_DIR}")
+
+set(OCCT_TKFeat_GTests_FILES
+  BRepFeat_MakeDPrism_Test.cxx
+  BRepFeat_MakePrism_Test.cxx
+)

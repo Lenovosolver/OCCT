@@ -1,0 +1,36 @@
+puts "============"
+puts "OCC22809"
+puts "============"
+puts ""
+############################################################################################################
+# BRepIntCS does not find intersections of an ellipsoid and a line passing through it's apex
+###########################################################################################################
+
+set BugNumber OCC22809
+
+psphere a 100
+scalexyz r2 a 2 1 1
+line l -0.000001 0.0000000001 -100 0 0 1
+BRepIntCS l r2
+
+# Intersections at a pole can be reported more than once.
+set foundLower 0
+set foundUpper 0
+foreach point [directory brics_*] {
+  if {![regexp {Point : ([-0-9.+eE]+), ([-0-9.+eE]+), ([-0-9.+eE]+)} [dump $point] full x y z]} {
+    puts "Error: Intersection result is not a point"
+    continue
+  }
+  checkreal "$point x" $x -1.0e-6 0 0.001
+  checkreal "$point y" $y 1.0e-10 0 0.001
+  if {abs($z + 100.0) <= 1.e-7} {
+    set foundLower 1
+  } elseif {abs($z - 100.0) <= 1.e-7} {
+    set foundUpper 1
+  } else {
+    puts "Error: Intersection point is not on either ellipsoid pole"
+  }
+}
+if {!$foundLower || !$foundUpper} {
+  puts "Error: Both ellipsoid poles must be found"
+}
